@@ -40,8 +40,12 @@ int hw_set_patch_file_name(char *p_conf_name, char *p_conf_value, int param);
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int param);
 #endif
-
-
+#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+int hw_pcm_set_param(char *p_conf_name, char *p_conf_value, int param);
+int hw_pcm_fmt_set_param(char *p_conf_name, char *p_conf_value, int param);
+#else
+int hw_i2s_set_param(char *p_conf_name, char *p_conf_value, int param);
+#endif
 /******************************************************************************
 **  Local type definitions
 ******************************************************************************/
@@ -73,6 +77,24 @@ static const conf_entry_t conf_table[] = {
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
     {"FwPatchSettlementDelay", hw_set_patch_settlement_delay, 0},
 #endif
+#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+    {"SCO_PCM_ROUTING", hw_pcm_set_param, 0},
+    {"SCO_PCM_IF_CLOCK_RATE", hw_pcm_set_param, 0},
+    {"SCO_PCM_IF_FRAME_TYPE", hw_pcm_set_param, 0},
+    {"SCO_PCM_IF_SYNC_MODE", hw_pcm_set_param, 1},
+    {"SCO_PCM_IF_CLOCK_MODE", hw_pcm_set_param, 1},
+
+    {"PCM_DATA_FMT_SHIFT_MODE", hw_pcm_fmt_set_param, 0},
+    {"PCM_DATA_FMT_FILL_BITS", hw_pcm_fmt_set_param, 0},
+    {"PCM_DATA_FMT_FILL_METHOD", hw_pcm_fmt_set_param, 0},
+    {"PCM_DATA_FMT_FILL_NUM", hw_pcm_fmt_set_param, 3},
+    {"PCM_DATA_FMT_JUSTIFY_MODE", hw_pcm_fmt_set_param, 0},
+#else
+    {"SCO_I2SPCM_IF_MODE", hw_i2s_set_param, 1},
+    {"SCO_I2SPCM_IF_ROLE", hw_i2s_set_param, 1},
+    {"SCO_I2SPCM_IF_SAMPLE_RATE", hw_i2s_set_param, 0},
+    {"SCO_I2SPCM_IF_CLOCK_RATE", hw_i2s_set_param, 1},
+#endif
     {(const char *) NULL, NULL, 0}
 };
 
@@ -99,6 +121,12 @@ void vnd_load_conf(const char *p_path)
     char    line[CONF_MAX_LINE_LEN+1]; /* add 1 for \0 char */
 
     ALOGI("Attempt to load conf from %s", p_path);
+
+#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+    ALOGI("PCM define ");
+#else
+    ALOGI("I2S define");
+#endif
 
     if ((p_file = fopen(p_path, "r")) != NULL)
     {
