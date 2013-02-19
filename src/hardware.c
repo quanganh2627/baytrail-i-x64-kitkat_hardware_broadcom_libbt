@@ -192,6 +192,19 @@ static uint8_t bt_sco_param[SCO_PCM_PARAM_SIZE] =
     SCO_PCM_IF_SYNC_MODE,
     SCO_PCM_IF_CLOCK_MODE
 };
+/*
+ * Parameter names used in bt_vendor.conf to configure BT SCO PCM settings.
+ * Below table should always matches the previous table in terms of size
+ * and elements order.
+ */
+static const char* sco_pcm_parameter_name[SCO_PCM_PARAM_SIZE] =
+{
+    "SCO_PCM_ROUTING",
+    "SCO_PCM_IF_CLOCK_RATE",
+    "SCO_PCM_IF_FRAME_TYPE",
+    "SCO_PCM_IF_SYNC_MODE",
+    "SCO_PCM_IF_CLOCK_MODE"
+};
 
 static uint8_t bt_pcm_data_fmt_param[PCM_DATA_FORMAT_PARAM_SIZE] =
 {
@@ -201,7 +214,21 @@ static uint8_t bt_pcm_data_fmt_param[PCM_DATA_FORMAT_PARAM_SIZE] =
     PCM_DATA_FMT_FILL_NUM,
     PCM_DATA_FMT_JUSTIFY_MODE
 };
-#else
+/*
+ * Parameter names used in bt_vendor.conf to configure BT SCO PCM FORMAT settings.
+ * Below table should always matches the previous table in terms of size
+ * and elements order.
+ */
+static const char* pcm_data_fmt_parameter_name[PCM_DATA_FORMAT_PARAM_SIZE] =
+{
+    "PCM_DATA_FMT_SHIFT_MODE",
+    "PCM_DATA_FMT_FILL_BITS",
+    "PCM_DATA_FMT_FILL_METHOD",
+    "PCM_DATA_FMT_FILL_NUM",
+    "PCM_DATA_FMT_JUSTIFY_MODE"
+};
+
+#else // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
 static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
 {
     SCO_I2SPCM_IF_MODE,
@@ -209,7 +236,19 @@ static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
     SCO_I2SPCM_IF_SAMPLE_RATE,
     SCO_I2SPCM_IF_CLOCK_RATE
 };
-#endif
+/*
+ * Parameter names use in bt_vendor.conf to configure BT SCO I2S settings.
+ * Below table should always match the previous table in term of size
+ * and element order.
+ */
+static const char* sco_i2s_parameter_name[SCO_I2SPCM_PARAM_SIZE] = {
+    "SCO_I2SPCM_IF_MODE",
+    "SCO_I2SPCM_IF_ROLE",
+    "SCO_I2SPCM_IF_SAMPLE_RATE",
+    "SCO_I2SPCM_IF_CLOCK_RATE"
+};
+
+#endif // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
 
 /*
  * The look-up table of recommended firmware settlement delay (milliseconds) on
@@ -1230,6 +1269,76 @@ int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int par
     return 0;
 }
 #endif  //VENDOR_LIB_RUNTIME_TUNING_ENABLED
+
+static inline int set_param(char *p_name, char *p_value, int param, int size, \
+                            const char *param_name[], uint8_t *bt_param)
+{
+    int i;
+    ALOGE( "%s: parameter: %s value: %s", __func__, p_name, p_value);
+
+    for (i = 0; i < size; i++) {
+         if (strcmp(param_name[i], p_name) == 0) {
+           bt_param[i] = atoi(p_value);
+           return 0;
+        }
+    }
+
+    // no parameter matching
+    ALOGE( "%s: invalid parameter %s", __func__, p_name);
+    return -EINVAL;
+}
+
+#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+/*******************************************************************************
+**
+** Function        hw_pcm_set_param
+**
+** Description     Set SCO PCM parameters
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_pcm_set_param(char *p_name, char *p_value, int param)
+{
+    return set_param(p_name, p_value, param, SCO_PCM_PARAM_SIZE, \
+                     sco_pcm_parameter_name, bt_sco_param);
+}
+
+/*******************************************************************************
+**
+** Function        hw_pcm_fmt_set_param
+**
+** Description     Set SCO PCM Format parameters
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_pcm_fmt_set_param(char *p_name, char *p_value, int param)
+{
+    return set_param(p_name, p_value, param, PCM_DATA_FORMAT_PARAM_SIZE, \
+                     pcm_data_fmt_parameter_name, bt_pcm_data_fmt_param);
+}
+
+#else // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+/*******************************************************************************
+**
+** Function        hw_i2s_set_param
+**
+** Description     Set SCO I2S parameters
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_i2s_set_param(char *p_name, char *p_value, int param)
+{
+    return set_param(p_name, p_value, param, SCO_I2SPCM_PARAM_SIZE, \
+                     sco_i2s_parameter_name, bt_sco_param);
+}
+#endif // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+
 
 /*****************************************************************************
 **   Sample Codes Section
