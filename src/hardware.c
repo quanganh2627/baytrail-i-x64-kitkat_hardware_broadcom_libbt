@@ -81,6 +81,7 @@
 
 #define HCI_EVT_CMD_CMPL_STATUS_RET_BYTE        5
 #define HCI_EVT_CMD_CMPL_LOCAL_NAME_STRING      6
+#define HCI_EVT_CMD_CMPL_LOCAL_REVISION         12
 #define HCI_EVT_CMD_CMPL_LOCAL_BDADDR_ARRAY     6
 #define HCI_EVT_CMD_CMPL_OPCODE                 3
 #define LPM_CMD_PARAM_SIZE                      12
@@ -90,6 +91,9 @@
 #define BD_ADDR_LEN                             6
 #define LOCAL_NAME_BUFFER_LEN                   32
 #define LOCAL_BDADDR_PATH_BUFFER_LEN            256
+
+#define HCI_READ_LOCAL_VERSION_INFORMATION      0x1001
+
 
 #define STREAM_TO_UINT16(u16, p) {u16 = ((uint16_t)(*(p)) + (((uint16_t)(*((p) + 1))) << 8)); (p) += 2;}
 #define UINT16_TO_STREAM(p, u16) {*(p)++ = (uint8_t)(u16); *(p)++ = (uint8_t)((u16) >> 8);}
@@ -105,6 +109,8 @@ enum {
     HW_CFG_SET_UART_CLOCK,
     HW_CFG_SET_UART_BAUD_1,
     HW_CFG_READ_LOCAL_NAME,
+    HW_CFG_CHECK_LOCAL_REVISION,
+    HW_CFG_CHECK_LOCAL_NAME,
     HW_CFG_DL_MINIDRIVER,
     HW_CFG_DL_FW_PATCH,
     HW_CFG_SET_UART_BAUD_2,
@@ -683,40 +689,85 @@ void hw_config_cback(void *p_mem)
                 {
                     strncpy(hw_cfg_cb.local_chip_name, "UNKNOWN", \
                             LOCAL_NAME_BUFFER_LEN-1);
-                    p_name = p_tmp;
+                    break;
                 }
 
                 hw_cfg_cb.local_chip_name[LOCAL_NAME_BUFFER_LEN-1] = 0;
 
-                BTHWDBG("Chipset %s", hw_cfg_cb.local_chip_name);
-
-                if ((status = hw_config_findpatch(p_name)) == TRUE)
+                /* Additional check for revision if chip is BCM4335 */
+                if (strstr(hw_cfg_cb.local_chip_name, "BCM4335") != NULL)
                 {
-                    if ((hw_cfg_cb.fw_fd = open(p_name, O_RDONLY)) == -1)
+                    ALOGI("bt vendor lib: BCM4335 chip detected, needs to check for the lmp version...");
+
+                    /* read local revision to check lmp version to differentiate between A0 and B0 revision of BCM4335 */
+                    UINT16_TO_STREAM(p, HCI_READ_LOCAL_VERSION_INFORMATION);
+                    *p = 0; /* parameter length */
+
+                    p_buf->len = HCI_CMD_PREAMBLE_SIZE;
+                    hw_cfg_cb.state = HW_CFG_CHECK_LOCAL_REVISION;
+
+                    is_proceeding = bt_vendor_cbacks->xmit_cb( \
+                                        HCI_READ_LOCAL_VERSION_INFORMATION, \
+                                        p_buf, hw_config_cback);
+                    break;
+                }
+                goto check_local_name;
+
+
+            case HW_CFG_CHECK_LOCAL_REVISION:
+                {
+                    uint16_t    lmp_subversion;
+                    uint8_t     *p_lmp;
+
+                    p_lmp = (uint8_t *) (p_evt_buf + 1) + HCI_EVT_CMD_CMPL_LOCAL_REVISION;
+                                        STREAM_TO_UINT16(lmp_subversion, p_lmp);
+
+                    ALOGI("bt vendor lib: lmp version : %04x.", lmp_subversion);
+                    if (lmp_subversion == 0x4106)
                     {
-                        ALOGE("vendor lib preload failed to open [%s]", p_name);
+                        /* Found BCM4335B0 revision */
+                        hw_cfg_cb.local_chip_name[7] = 'B';
+                    }
+                }
+                /* fall through intentionally */
+
+            case HW_CFG_CHECK_LOCAL_NAME:
+
+check_local_name:
+                {
+                    char tmp_path[255];
+
+                    BTHWDBG("Chipset %s", hw_cfg_cb.local_chip_name);
+
+                    strcpy(tmp_path, hw_cfg_cb.local_chip_name);
+
+                    if ((status = hw_config_findpatch(tmp_path)) == TRUE)
+                    {
+                        if ((hw_cfg_cb.fw_fd = open(tmp_path, O_RDONLY)) == -1)
+                        {
+                            ALOGE("vendor lib preload failed to open [%s]", tmp_path);
+                        }
+                        else
+                        {
+                            /* vsc_download_minidriver */
+                            UINT16_TO_STREAM(p, HCI_VSC_DOWNLOAD_MINIDRV);
+                            *p = 0; /* parameter length */
+
+                            p_buf->len = HCI_CMD_PREAMBLE_SIZE;
+                            hw_cfg_cb.state = HW_CFG_DL_MINIDRIVER;
+
+                            is_proceeding = bt_vendor_cbacks->xmit_cb( \
+                                                HCI_VSC_DOWNLOAD_MINIDRV, p_buf, \
+                                                hw_config_cback);
+                        }
                     }
                     else
                     {
-                        /* vsc_download_minidriver */
-                        UINT16_TO_STREAM(p, HCI_VSC_DOWNLOAD_MINIDRV);
-                        *p = 0; /* parameter length */
-
-                        p_buf->len = HCI_CMD_PREAMBLE_SIZE;
-                        hw_cfg_cb.state = HW_CFG_DL_MINIDRIVER;
-
-                        is_proceeding = bt_vendor_cbacks->xmit_cb( \
-                                            HCI_VSC_DOWNLOAD_MINIDRV, p_buf, \
-                                            hw_config_cback);
+                        ALOGE( \
+                        "vendor lib preload failed to locate firmware patch file" \
+                        );
                     }
                 }
-                else
-                {
-                    ALOGE( \
-                    "vendor lib preload failed to locate firmware patch file" \
-                    );
-                }
-
                 if (is_proceeding == FALSE)
                 {
                     is_proceeding = hw_config_set_bdaddr(p_buf);
