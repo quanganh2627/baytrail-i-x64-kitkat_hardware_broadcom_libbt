@@ -1434,6 +1434,36 @@ int hw_set_patch_file_path(char *p_conf_name, char *p_conf_value, int param)
 
 /*******************************************************************************
 **
+** Function        hw_set_patch_file_root_path
+**
+** Description     Set the root location of firmware patch files. Then, the
+**                 board revision (e.g. "vv", "pr") etc is appended to this.
+**                 (created by intel)
+**
+** Returns         0
+**
+*******************************************************************************/
+int hw_set_patch_file_root_path(char *p_conf_name, char *p_conf_value, int param)
+{
+    // Buffer to get the value of the property giving the board revision
+    char board_revision[PROPERTY_VALUE_MAX] = {0};
+
+
+    /* First, copy the root file path received as parameter */
+    strcpy(fw_patchfile_path, p_conf_value); // as in hw_set_patch_file_path()
+
+    /* Then get and  append the board revision (e.g. vv, pr etc) */
+    property_get("ro.spid.wifi.nvram", // TODO: rename the property giving the board revision
+                 board_revision,
+                 "vv" /* if no property is set, assume it is a vv board */);
+    strcat(fw_patchfile_path, board_revision);
+    /* no need to append a final slash: hw_config_findpatch() copes with this. */
+
+    return 0;
+}
+
+/*******************************************************************************
+**
 ** Function        hw_set_patch_file_name
 **
 ** Description     Give the specific firmware patch filename
