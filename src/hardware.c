@@ -745,7 +745,7 @@ check_local_name:
                     {
                         if ((hw_cfg_cb.fw_fd = open(tmp_path, O_RDONLY)) == -1)
                         {
-                            ALOGE("vendor lib preload failed to open [%s]", p_name);
+                            ALOGE("vendor lib preload failed to open [%s]", tmp_path);
                         }
                         else
                         {
