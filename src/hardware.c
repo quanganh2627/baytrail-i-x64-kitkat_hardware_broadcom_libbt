@@ -45,6 +45,8 @@
 #include "userial_vendor.h"
 #include "upio.h"
 
+#include <lct.h>
+
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
@@ -833,6 +835,7 @@ void hw_config_cback(void *p_mem)
                 {
                     uint16_t    lmp_subversion;
                     uint8_t     *p_lmp;
+                    char tmp[5];
 
                     p_lmp = (uint8_t *) (p_evt_buf + 1) + HCI_EVT_CMD_CMPL_LOCAL_REVISION;
                     STREAM_TO_UINT16(lmp_subversion, p_lmp);
@@ -842,6 +845,9 @@ void hw_config_cback(void *p_mem)
                         /* Found BCM4335B0 revision */
                         hw_cfg_cb.local_chip_name[7] = 'B';
                     }
+
+                    snprintf(tmp, sizeof(tmp), "%04x", lmp_subversion);
+                    lct_log(CT_EV_INFO, "cws.bt", "fw_version", 0, hw_cfg_cb.local_chip_name, tmp);
                 }
                 /* fall through intentionally */
 
@@ -860,6 +866,7 @@ check_local_name:
                         if ((hw_cfg_cb.fw_fd = open(tmp_path, O_RDONLY)) == -1)
                         {
                             ALOGE("vendor lib preload failed to open [%s]", tmp_path);
+                            lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                         }
                     }
                     else
@@ -867,6 +874,7 @@ check_local_name:
                         ALOGE( \
                         "vendor lib preload failed to locate firmware patch file" \
                         );
+                        lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                     }
                 }
 
@@ -1060,6 +1068,7 @@ check_local_name:
     if (is_proceeding == FALSE)
     {
         ALOGE("vendor lib fwcfg aborted!!!");
+        lct_log(CT_EV_STAT, "cws.bt", "fw_cfg", 0);
         if (bt_vendor_cbacks)
         {
             if (p_buf != NULL)
