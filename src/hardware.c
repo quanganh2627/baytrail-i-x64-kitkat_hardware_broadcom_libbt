@@ -45,6 +45,8 @@
 #include "userial_vendor.h"
 #include "upio.h"
 
+#include <lct.h>
+
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
@@ -860,6 +862,7 @@ check_local_name:
                         if ((hw_cfg_cb.fw_fd = open(tmp_path, O_RDONLY)) == -1)
                         {
                             ALOGE("vendor lib preload failed to open [%s]", tmp_path);
+                            lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                         }
                     }
                     else
@@ -867,6 +870,7 @@ check_local_name:
                         ALOGE( \
                         "vendor lib preload failed to locate firmware patch file" \
                         );
+                        lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                     }
                 }
 
@@ -1060,6 +1064,7 @@ check_local_name:
     if (is_proceeding == FALSE)
     {
         ALOGE("vendor lib fwcfg aborted!!!");
+        lct_log(CT_EV_STAT, "cws.bt", "fw_cfg", 0);
         if (bt_vendor_cbacks)
         {
             if (p_buf != NULL)
