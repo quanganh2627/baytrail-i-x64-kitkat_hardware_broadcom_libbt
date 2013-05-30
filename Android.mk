@@ -4,7 +4,7 @@ include $(CLEAR_VARS)
 
 BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
 
-include $(TOP_DIR)vendor/intel/common/ComboChipVendor.mk
+include $(TOP_DIR)device/intel/common/ComboChipVendor.mk
 
 LOCAL_MODULE := libbt-vendor
 LOCAL_MODULE_TAGS := optional
