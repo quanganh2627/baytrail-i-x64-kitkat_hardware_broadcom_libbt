@@ -46,6 +46,7 @@
 ******************************************************************************/
 
 void hw_config_start(void);
+void hw_config_cleanup(void);
 uint8_t hw_lpm_enable(uint8_t turn_on);
 uint32_t hw_lpm_get_idle_timeout(void);
 void hw_lpm_set_wake_state(uint8_t wake_assert);
@@ -230,6 +231,7 @@ static void cleanup( void )
     BTVNDDBG("cleanup");
 
     upio_cleanup();
+    hw_config_cleanup();
 
     bt_vendor_cbacks = NULL;
 }
