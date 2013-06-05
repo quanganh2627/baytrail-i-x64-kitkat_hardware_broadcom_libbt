@@ -78,6 +78,7 @@
 #define HCI_VSC_WRITE_SCO_PCM_INT_PARAM         0xFC1C
 #define HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM     0xFC1E
 #define HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM    0xFC6D
+#define HCI_VSC_WRITE_RAM                       0xFC4C
 #define HCI_VSC_LAUNCH_RAM                      0xFC4E
 #define HCI_READ_LOCAL_BDADDR                   0x1009
 
@@ -586,6 +587,58 @@ static uint8_t hw_config_set_bdaddr(HC_BT_HDR *p_buf)
     return (retval);
 }
 
+/*******************************************************************************
+**
+** Function         hw_config_set_baudrate
+**
+** Description      Change controller's UART baud rate
+**
+** Returns          TRUE, if command is sent
+**                  FALSE, otherwise
+**
+*******************************************************************************/
+static uint8_t hw_config_set_baudrate(HC_BT_HDR *p_buf)
+{
+    uint8_t retval = FALSE;
+    uint8_t *p = (uint8_t *) (p_buf + 1);
+
+    if (hw_cfg_cb.state != HW_CFG_SET_UART_CLOCK)
+    {
+        /* Check if we need to set UART clock first */
+        if (UART_TARGET_BAUD_RATE > 3000000)
+        {
+            /* set UART clock to 48MHz */
+            UINT16_TO_STREAM(p, HCI_VSC_WRITE_UART_CLOCK_SETTING);
+            *p++ = 1; /* parameter length */
+            *p = 1; /* (1,"UART CLOCK 48 MHz")(2,"UART CLOCK 24 MHz") */
+
+            p_buf->len = HCI_CMD_PREAMBLE_SIZE + 1;
+            hw_cfg_cb.state = HW_CFG_SET_UART_CLOCK;
+
+            retval = bt_vendor_cbacks->xmit_cb( \
+                                HCI_VSC_WRITE_UART_CLOCK_SETTING, \
+                                p_buf, hw_config_cback);
+            return (retval);
+        }
+    }
+
+    /* set controller's UART baud rate to 3M */
+    UINT16_TO_STREAM(p, HCI_VSC_UPDATE_BAUDRATE);
+    *p++ = UPDATE_BAUDRATE_CMD_PARAM_SIZE; /* parameter length */
+    *p++ = 0; /* encoded baud rate */
+    *p++ = 0; /* use encoded form */
+    UINT32_TO_STREAM(p, UART_TARGET_BAUD_RATE);
+
+    p_buf->len = HCI_CMD_PREAMBLE_SIZE + UPDATE_BAUDRATE_CMD_PARAM_SIZE;
+    hw_cfg_cb.state = (hw_cfg_cb.f_set_baud_2) ? \
+                HW_CFG_SET_UART_BAUD_2 : HW_CFG_SET_UART_BAUD_1;
+
+    retval = bt_vendor_cbacks->xmit_cb(HCI_VSC_UPDATE_BAUDRATE, \
+                                        p_buf, hw_config_cback);
+
+    return (retval);
+}
+
 #if (USE_CONTROLLER_BDADDR == TRUE)
 /*******************************************************************************
 **
@@ -657,13 +710,7 @@ void hw_config_cback(void *p_mem)
 
         switch (hw_cfg_cb.state)
         {
-            case HW_CFG_SET_UART_BAUD_1:
-                /* update baud rate of host's UART port */
-                ALOGI("bt vendor lib: set UART baud %i", UART_TARGET_BAUD_RATE);
-                userial_vendor_set_baud( \
-                    line_speed_to_userial_baud(UART_TARGET_BAUD_RATE) \
-                );
-
+            case HW_CFG_START:
                 /* read local name */
                 UINT16_TO_STREAM(p, HCI_READ_LOCAL_NAME);
                 *p = 0; /* parameter length */
@@ -723,8 +770,7 @@ void hw_config_cback(void *p_mem)
                     char tmp[5];
 
                     p_lmp = (uint8_t *) (p_evt_buf + 1) + HCI_EVT_CMD_CMPL_LOCAL_REVISION;
-                                        STREAM_TO_UINT16(lmp_subversion, p_lmp);
-
+                    STREAM_TO_UINT16(lmp_subversion, p_lmp);
                     ALOGI("bt vendor lib: lmp version : %04x.", lmp_subversion);
                     if (lmp_subversion == 0x4106)
                     {
@@ -754,19 +800,6 @@ check_local_name:
                             ALOGE("vendor lib preload failed to open [%s]", tmp_path);
                             lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                         }
-                        else
-                        {
-                            /* vsc_download_minidriver */
-                            UINT16_TO_STREAM(p, HCI_VSC_DOWNLOAD_MINIDRV);
-                            *p = 0; /* parameter length */
-
-                            p_buf->len = HCI_CMD_PREAMBLE_SIZE;
-                            hw_cfg_cb.state = HW_CFG_DL_MINIDRIVER;
-
-                            is_proceeding = bt_vendor_cbacks->xmit_cb( \
-                                                HCI_VSC_DOWNLOAD_MINIDRV, p_buf, \
-                                                hw_config_cback);
-                        }
                     }
                     else
                     {
@@ -776,7 +809,34 @@ check_local_name:
                         lct_log(CT_EV_STAT, "cws.bt", "fw_error", 0, tmp_path);
                     }
                 }
+
                 if (is_proceeding == FALSE)
+                {
+                    is_proceeding = hw_config_set_baudrate(p_buf);
+                }
+                break;
+
+            case HW_CFG_SET_UART_BAUD_1:
+                /* update baud rate of host's UART port */
+                ALOGI("bt vendor lib: set UART baud %i", UART_TARGET_BAUD_RATE);
+                userial_vendor_set_baud( \
+                    line_speed_to_userial_baud(UART_TARGET_BAUD_RATE) \
+                );
+
+                if (hw_cfg_cb.fw_fd != -1)
+                {
+                    /* vsc_download_minidriver */
+                    UINT16_TO_STREAM(p, HCI_VSC_DOWNLOAD_MINIDRV);
+                    *p = 0; /* parameter length */
+
+                    p_buf->len = HCI_CMD_PREAMBLE_SIZE;
+                    hw_cfg_cb.state = HW_CFG_DL_MINIDRIVER;
+
+                    is_proceeding = bt_vendor_cbacks->xmit_cb( \
+                                        HCI_VSC_DOWNLOAD_MINIDRV, p_buf, \
+                                        hw_config_cback);
+                }
+                else
                 {
                     is_proceeding = hw_config_set_bdaddr(p_buf);
                 }
@@ -829,38 +889,8 @@ check_local_name:
                 ms_delay(look_up_fw_settlement_delay());
 
                 /* fall through intentionally */
-            case HW_CFG_START:
-                if (UART_TARGET_BAUD_RATE > 3000000)
-                {
-                    /* set UART clock to 48MHz */
-                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_UART_CLOCK_SETTING);
-                    *p++ = 1; /* parameter length */
-                    *p = 1; /* (1,"UART CLOCK 48 MHz")(2,"UART CLOCK 24 MHz") */
-
-                    p_buf->len = HCI_CMD_PREAMBLE_SIZE + 1;
-                    hw_cfg_cb.state = HW_CFG_SET_UART_CLOCK;
-
-                    is_proceeding = bt_vendor_cbacks->xmit_cb( \
-                                        HCI_VSC_WRITE_UART_CLOCK_SETTING, \
-                                        p_buf, hw_config_cback);
-                    break;
-                }
-                /* fall through intentionally */
             case HW_CFG_SET_UART_CLOCK:
-                /* set controller's UART baud rate to 3M */
-                UINT16_TO_STREAM(p, HCI_VSC_UPDATE_BAUDRATE);
-                *p++ = UPDATE_BAUDRATE_CMD_PARAM_SIZE; /* parameter length */
-                *p++ = 0; /* encoded baud rate */
-                *p++ = 0; /* use encoded form */
-                UINT32_TO_STREAM(p, UART_TARGET_BAUD_RATE);
-
-                p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
-                             UPDATE_BAUDRATE_CMD_PARAM_SIZE;
-                hw_cfg_cb.state = (hw_cfg_cb.f_set_baud_2) ? \
-                            HW_CFG_SET_UART_BAUD_2 : HW_CFG_SET_UART_BAUD_1;
-
-                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_VSC_UPDATE_BAUDRATE, \
-                                                    p_buf, hw_config_cback);
+                is_proceeding = hw_config_set_baudrate(p_buf);
                 break;
 
             case HW_CFG_SET_UART_BAUD_2:
@@ -1107,6 +1137,24 @@ void hw_config_start(void)
             ALOGE("vendor lib fw conf aborted [no buffer]");
             bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_FAIL);
         }
+    }
+}
+
+/*******************************************************************************
+**
+** Function        hw_config_cleanup
+**
+** Description     Clean up system resource allocated in HW CONFIG module
+**
+** Returns         None
+**
+*******************************************************************************/
+void hw_config_cleanup(void)
+{
+    if ((hw_cfg_cb.fw_fd != -1) && (hw_cfg_cb.fw_fd > 2 /*stderr*/))
+    {
+        close(hw_cfg_cb.fw_fd);
+        hw_cfg_cb.fw_fd = -1;
     }
 }
 
