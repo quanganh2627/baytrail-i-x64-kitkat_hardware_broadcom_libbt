@@ -27,6 +27,7 @@
 #define LOG_TAG "bt_vendor"
 
 #include <utils/Log.h>
+#include <cutils/properties.h>
 #include "bt_vendor_brcm.h"
 #include "upio.h"
 #include "userial_vendor.h"
@@ -91,6 +92,7 @@ static const tUSERIAL_CFG userial_init_cfg =
 
 static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
 {
+    char lib_conf_file[PROPERTY_VALUE_MAX];
     ALOGI("init");
 
     if (p_cb == NULL)
@@ -115,7 +117,8 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     userial_vendor_init();
     upio_init();
 
-    vnd_load_conf(VENDOR_LIB_CONF_FILE);
+    property_get("ro.bt.conf_file", lib_conf_file, VENDOR_LIB_CONF_FILE);
+    vnd_load_conf(lib_conf_file);
 
     /* store reference to user callbacks */
     bt_vendor_cbacks = (bt_vendor_callbacks_t *) p_cb;
