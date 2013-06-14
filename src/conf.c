@@ -29,6 +29,7 @@
 
 #include <utils/Log.h>
 #include <string.h>
+#include <cutils/properties.h>
 #include "bt_vendor_brcm.h"
 
 /******************************************************************************
@@ -173,3 +174,36 @@ void vnd_load_conf(const char *p_path)
     }
 }
 
+/*******************************************************************************
+**
+** Function        vnd_load_prop
+**
+** Description     Read conf entry from android system properties and call
+**                 the corresponding config function
+**
+** Returns         None
+**
+*******************************************************************************/
+void vnd_load_prop()
+{
+    char     prop_key[PROPERTY_KEY_MAX];
+    char     prop_value[PROPERTY_VALUE_MAX];
+    conf_entry_t    *p_entry;
+
+    p_entry = (conf_entry_t *)conf_table;
+
+    while (p_entry->conf_entry != NULL)
+    {
+        const char *prefix = "ro.bt.vnd.";
+        strcpy(prop_key, prefix);
+        strncat(prop_key, p_entry->conf_entry, PROPERTY_KEY_MAX - 1 - strlen(prefix));
+        property_get(prop_key, prop_value, NULL);
+        if (prop_value != NULL) {
+            p_entry->p_action((char *)p_entry->conf_entry, prop_value,
+                                                           p_entry->param);
+            ALOGI("%s set to %s through property", p_entry->conf_entry,
+                                                   prop_value);
+        }
+        p_entry++;
+    }
+}

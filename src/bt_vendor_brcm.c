@@ -54,6 +54,7 @@ void hw_lpm_set_wake_state(uint8_t wake_assert);
 #if (SCO_CFG_INCLUDED == TRUE)
 void hw_sco_config(void);
 #endif
+void vnd_load_prop();
 void vnd_load_conf(const char *p_path);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
@@ -117,6 +118,10 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     userial_vendor_init();
     upio_init();
 
+    /* Load first the configuration through properties */
+    vnd_load_prop();
+
+    /* Then the file configuration can overwrite them */
     property_get("ro.bt.conf_file", lib_conf_file, VENDOR_LIB_CONF_FILE);
     vnd_load_conf(lib_conf_file);
 
