@@ -404,7 +404,13 @@ void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
         case UPIO_BT_WAKE:
             if (upio_state[UPIO_BT_WAKE] == action)
             {
-                UPIODBG("BT_WAKE is %s already", lpm_state[action]);
+#if (UPIO_DBG == TRUE)
+                // Filters UPIO_ASSERT action done each 20ms in the A2DP use case.
+                if (action != UPIO_ASSERT)
+                {
+                    UPIODBG("BT_WAKE is %s already", lpm_state[action]);
+                }
+#endif
 
 #if (BT_WAKE_VIA_PROC == TRUE)
                 if (lpm_proc_cb.btwrite_active == TRUE)
