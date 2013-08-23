@@ -32,6 +32,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <signal.h>
+#include <sched.h>
 #include <time.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -39,6 +40,7 @@
 #include <ctype.h>
 #include <cutils/properties.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "bt_hci_bdroid.h"
 #include "bt_vendor_brcm.h"
 #include "userial.h"
@@ -88,6 +90,7 @@
 #define HCI_VSC_WRITE_SCO_PCM_INT_PARAM         0xFC1C
 #define HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM     0xFC1E
 #define HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM    0xFC6D
+#define HCI_VSC_WRITE_MSBC_ENABLE_PARAM         0xFC7E
 #define HCI_VSC_WRITE_RAM                       0xFC4C
 #define HCI_VSC_LAUNCH_RAM                      0xFC4E
 #define HCI_READ_LOCAL_BDADDR                   0x1009
@@ -146,6 +149,20 @@ typedef struct
     char    local_chip_name[LOCAL_NAME_BUFFER_LEN];
 } bt_hw_cfg_cb_t;
 
+/* Hardware SCO Configuration State */
+enum hw_sco_state {
+    HW_SCO_PCM,
+    HW_SCO_PCM_FORMAT,
+    HW_SCO_I2S
+};
+
+/* Hardware Codec Configuration State */
+enum hw_wbs_state {
+    HW_WBS_CODEC,
+    HW_WBS_PCM,
+    HW_WBS_I2S
+};
+
 /* low power mode parameters */
 typedef struct
 {
@@ -189,6 +206,9 @@ static int fw_patch_settlement_delay = -1;
 #endif
 
 static bt_hw_cfg_cb_t hw_cfg_cb;
+static enum hw_sco_state hw_sco_cb_state = 0;
+static enum hw_wbs_state hw_wbs_cb_state = 0;
+static pthread_mutex_t lpm_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static bt_lpm_param_t lpm_param =
 {
@@ -206,8 +226,7 @@ static bt_lpm_param_t lpm_param =
     LPM_PULSED_HOST_WAKE
 };
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-static uint8_t bt_sco_param[SCO_PCM_PARAM_SIZE] =
+static uint8_t bt_pcm_sco_param[SCO_PCM_PARAM_SIZE] =
 {
     SCO_PCM_ROUTING,
     SCO_PCM_IF_CLOCK_RATE,
@@ -251,8 +270,8 @@ static const char* pcm_data_fmt_parameter_name[PCM_DATA_FORMAT_PARAM_SIZE] =
     "PCM_DATA_FMT_JUSTIFY_MODE"
 };
 
-#else // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
+#if (SCO_USE_I2S_INTERFACE == TRUE)
+static uint8_t bt_i2s_sco_param[SCO_I2SPCM_PARAM_SIZE] =
 {
     SCO_I2SPCM_IF_MODE,
     SCO_I2SPCM_IF_ROLE,
@@ -271,7 +290,22 @@ static const char* sco_i2s_parameter_name[SCO_I2SPCM_PARAM_SIZE] = {
     "SCO_I2SPCM_IF_CLOCK_RATE"
 };
 
-#endif // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+#endif // (SCO_USE_I2S_INTERFACE == TRUE)
+
+/*
+ * Parameters used by the MSBC_ENABLE command to enable mSBC, specified as
+ * non-configurable constant values
+ */
+static uint8_t msbc_enable_param[MSBC_ENABLE_PARAM_SIZE] = {
+       1,
+       2,
+       0
+};
+
+/* Parameter used by the MSBC_ENABLE command to disable mSBC */
+static uint8_t msbc_disable_param[MSBC_DISABLE_PARAM_SIZE] = {
+       0
+};
 
 /*
  * The look-up table of recommended firmware settlement delay (milliseconds) on
@@ -1109,6 +1143,7 @@ void hw_lpm_ctrl_cback(void *p_mem)
     {
         status = BT_VND_OP_RESULT_SUCCESS;
     }
+    pthread_mutex_unlock(&lpm_mutex);
 
     if (bt_vendor_cbacks)
     {
@@ -1138,49 +1173,73 @@ void hw_sco_cfg_cback(void *p_mem)
     uint8_t     *p;
     uint16_t    opcode;
     HC_BT_HDR  *p_buf=NULL;
+    uint8_t     ret;
 
     p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
     STREAM_TO_UINT16(opcode,p);
+    if (bt_vendor_cbacks)
+        p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
+                                                       HCI_CMD_MAX_LEN);
+    if (p_buf != NULL) {
+        p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+        p_buf->offset = 0;
+        p_buf->layer_specific = 0;
+        p_buf->len = HCI_CMD_PREAMBLE_SIZE;
 
+        switch (hw_sco_cb_state) {
+
+            case HW_SCO_PCM: {
+                BTHWDBG("HW_SCO_PCM");
+                if (opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM) {
+                    p_buf->len += PCM_DATA_FORMAT_PARAM_SIZE;
+                    p = (uint8_t *) (p_buf + 1);
+                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM);
+                    *p++ = PCM_DATA_FORMAT_PARAM_SIZE;
+                    memcpy(p, &bt_pcm_data_fmt_param, PCM_DATA_FORMAT_PARAM_SIZE);
+                    hw_sco_cb_state = HW_SCO_PCM_FORMAT;
+                    if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM,\
+                                           p_buf, hw_sco_cfg_cback)) == FALSE)
+                   {
+                       bt_vendor_cbacks->dealloc(p_buf);
+                   }
+                }
+            }
+            break;
+
+            case HW_SCO_PCM_FORMAT: {
+                BTHWDBG("HW_SCO_PCO_FORMAT");
+                if (opcode == HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM) {
+#if (SCO_USE_I2S_INTERFACE == TRUE)
+                    p_buf->len += SCO_I2SPCM_PARAM_SIZE;
+                    p = (uint8_t *) (p_buf + 1);
+                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
+                    *p++ = SCO_I2SPCM_PARAM_SIZE;
+                    memcpy(p, &bt_i2s_sco_param, SCO_I2SPCM_PARAM_SIZE);
+                    ALOGI("SCO over I2SPCM interface {%d, %d, %d, %d}",
+                        bt_i2s_sco_param[0], bt_i2s_sco_param[1], bt_i2s_sco_param[2], bt_i2s_sco_param[3]);
+                    hw_sco_cb_state = HW_SCO_I2S;
+                    if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM,\
+                                           p_buf, hw_sco_cfg_cback)) == FALSE)
+                   {
+                       bt_vendor_cbacks->dealloc(p_buf);
+                   }
+                }
+            }
+            break;
+
+            case HW_SCO_I2S: {
+                BTHWDBG("HW_SCO_I2S");
+                if (opcode == HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM) {
+#endif // (SCO_USE_I2S_INTERFACE == TRUE)
+                    bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
+                }
+            }
+            break;
+        }
+    }
     /* Free the RX event buffer */
     if (bt_vendor_cbacks)
         bt_vendor_cbacks->dealloc(p_evt_buf);
-
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-    if (opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM)
-    {
-        uint8_t ret = FALSE;
-
-        /* Ask a new buffer to hold WRITE_PCM_DATA_FORMAT_PARAM command */
-        if (bt_vendor_cbacks)
-            p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
-                                                HCI_CMD_PREAMBLE_SIZE + \
-                                                PCM_DATA_FORMAT_PARAM_SIZE);
-        if (p_buf)
-        {
-            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
-            p_buf->offset = 0;
-            p_buf->layer_specific = 0;
-            p_buf->len = HCI_CMD_PREAMBLE_SIZE + PCM_DATA_FORMAT_PARAM_SIZE;
-
-            p = (uint8_t *) (p_buf + 1);
-            UINT16_TO_STREAM(p, HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM);
-            *p++ = PCM_DATA_FORMAT_PARAM_SIZE;
-            memcpy(p, &bt_pcm_data_fmt_param, PCM_DATA_FORMAT_PARAM_SIZE);
-
-            if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM,\
-                                           p_buf, hw_sco_cfg_cback)) == FALSE)
-            {
-                bt_vendor_cbacks->dealloc(p_buf);
-            }
-            else
-                return;
-        }
-    }
-#endif  // !SCO_USE_I2S_INTERFACE
-
-if (bt_vendor_cbacks)
-    bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
 }
 #endif // SCO_CFG_INCLUDED
 
@@ -1299,11 +1358,17 @@ uint8_t hw_lpm_enable(uint8_t turn_on)
             memset(p, 0, LPM_CMD_PARAM_SIZE);
             upio_set(UPIO_LPM_MODE, UPIO_DEASSERT, 0);
         }
-
-        if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_SLEEP_MODE, p_buf, \
+        if (!pthread_mutex_lock(&lpm_mutex)) {
+            if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_SLEEP_MODE, p_buf, \
                                         hw_lpm_ctrl_cback)) == FALSE)
+            {
+                bt_vendor_cbacks->dealloc(p_buf);
+                pthread_mutex_unlock(&lpm_mutex);
+            }
+        }
+        if (!turn_on)
         {
-            bt_vendor_cbacks->dealloc(p_buf);
+            pthread_mutex_unlock(&lpm_mutex); //sleep doesn't have a callback to unlock
         }
     }
 
@@ -1371,11 +1436,7 @@ void hw_sco_config(void)
     HC_BT_HDR  *p_buf = NULL;
     uint8_t     *p, ret;
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
     uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_PCM_PARAM_SIZE;
-#else
-    uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_I2SPCM_PARAM_SIZE;
-#endif
 
     if (bt_vendor_cbacks)
         p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE+cmd_u16);
@@ -1388,28 +1449,21 @@ void hw_sco_config(void)
         p_buf->len = cmd_u16;
 
         p = (uint8_t *) (p_buf + 1);
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
         UINT16_TO_STREAM(p, HCI_VSC_WRITE_SCO_PCM_INT_PARAM);
         *p++ = SCO_PCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_PCM_PARAM_SIZE);
+        memcpy(p, &bt_pcm_sco_param, SCO_PCM_PARAM_SIZE);
         cmd_u16 = HCI_VSC_WRITE_SCO_PCM_INT_PARAM;
         ALOGI("SCO PCM configure {%d, %d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3], \
-           bt_sco_param[4]);
+           bt_pcm_sco_param[0], bt_pcm_sco_param[1], bt_pcm_sco_param[2], bt_pcm_sco_param[3], \
+           bt_pcm_sco_param[4]);
 
-#else
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
-        *p++ = SCO_I2SPCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_I2SPCM_PARAM_SIZE);
-        cmd_u16 = HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM;
-        ALOGI("SCO over I2SPCM interface {%d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3]);
-#endif
+        hw_sco_cb_state = HW_SCO_PCM;
 
         if ((ret=bt_vendor_cbacks->xmit_cb(cmd_u16, p_buf, hw_sco_cfg_cback)) \
              == FALSE)
         {
             bt_vendor_cbacks->dealloc(p_buf);
+            pthread_mutex_unlock(&lpm_mutex);
         }
         else
             return;
@@ -1422,6 +1476,147 @@ void hw_sco_config(void)
     }
 }
 #endif  // SCO_CFG_INCLUDED
+
+#if (SCO_USE_I2S_INTERFACE == TRUE)
+/*******************************************************************************
+**
+** Function         hw_enable_mSBC_codec_cback
+**
+** Description      Callback function for enabling/disabling mSBC codec
+**
+** Returns          None
+**
+*******************************************************************************/
+void hw_enable_mSBC_codec_cback(void *p_mem)
+{
+    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *) p_mem;
+    uint8_t     *p;
+    uint16_t    opcode;
+    HC_BT_HDR  *p_buf=NULL;
+    uint8_t     ret;
+
+    p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
+    STREAM_TO_UINT16(opcode,p);
+    if (bt_vendor_cbacks)
+        p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
+                                                       HCI_CMD_MAX_LEN);
+    if (p_buf != NULL) {
+        p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+        p_buf->offset = 0;
+        p_buf->layer_specific = 0;
+        p_buf->len = HCI_CMD_PREAMBLE_SIZE;
+
+        switch (hw_wbs_cb_state) {
+
+            case HW_WBS_CODEC: {
+                BTHWDBG("HW_WBS_CODEC");
+                if (opcode == HCI_VSC_WRITE_MSBC_ENABLE_PARAM) {
+                    p_buf->len += SCO_PCM_PARAM_SIZE;
+                    p = (uint8_t *) (p_buf + 1);
+                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_SCO_PCM_INT_PARAM);
+                    *p++ = SCO_PCM_PARAM_SIZE;
+                    memcpy(p, &bt_pcm_sco_param, SCO_PCM_PARAM_SIZE);
+                    ALOGI("SCO over PCM interface {%d, %d, %d, %d, %d}",
+                        bt_pcm_sco_param[0], bt_pcm_sco_param[1], bt_pcm_sco_param[2], bt_pcm_sco_param[3], bt_pcm_sco_param[4]);
+                    hw_wbs_cb_state = HW_WBS_PCM;
+                    if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_SCO_PCM_INT_PARAM,\
+                                           p_buf, hw_enable_mSBC_codec_cback)) == FALSE)
+                   {
+                       bt_vendor_cbacks->dealloc(p_buf);
+                   }
+               }
+            }
+            break;
+
+            case HW_WBS_PCM: {
+                BTHWDBG("HW_WBS_PCM");
+                if (opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM) {
+                    p_buf->len += SCO_I2SPCM_PARAM_SIZE;
+                    p = (uint8_t *) (p_buf + 1);
+                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
+                    *p++ = SCO_I2SPCM_PARAM_SIZE;
+                    memcpy(p, &bt_i2s_sco_param, SCO_I2SPCM_PARAM_SIZE);
+                    ALOGI("SCO over I2SPCM interface {%d, %d, %d, %d}",
+                        bt_i2s_sco_param[0], bt_i2s_sco_param[1], bt_i2s_sco_param[2], bt_i2s_sco_param[3]);
+                    hw_wbs_cb_state = HW_WBS_I2S;
+                    if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM,\
+                                           p_buf, hw_enable_mSBC_codec_cback)) == FALSE)
+                   {
+                       bt_vendor_cbacks->dealloc(p_buf);
+                   }
+               }
+            }
+            break;
+
+            case HW_WBS_I2S: {
+                BTHWDBG("HW_WBS_I2S");
+                pthread_mutex_unlock(&lpm_mutex);
+            }
+            break;
+        }
+    }
+    /* Free the RX event buffer */
+    if (bt_vendor_cbacks)
+        bt_vendor_cbacks->dealloc(p_evt_buf);
+}
+
+/*******************************************************************************
+**
+** Function         hw_enable_mSBC_codec
+**
+** Description      Enable mSBC codec
+**
+** Returns          None
+**
+*******************************************************************************/
+void hw_enable_mSBC_codec(uint8_t state) {
+    HC_BT_HDR *p_buf = NULL;
+    uint8_t *p, ret;
+
+    if (bt_vendor_cbacks)
+            p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
+                                                HCI_CMD_PREAMBLE_SIZE + \
+                                                MSBC_ENABLE_PARAM_SIZE);
+        if (p_buf)
+        {
+            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
+            p_buf->offset = 0;
+            p_buf->layer_specific = 0;
+
+            p = (uint8_t *) (p_buf + 1);
+            UINT16_TO_STREAM(p, HCI_VSC_WRITE_MSBC_ENABLE_PARAM);
+            if (state == TRUE) {
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + MSBC_ENABLE_PARAM_SIZE;
+                *p++ = MSBC_ENABLE_PARAM_SIZE;
+                memcpy(p, &msbc_enable_param, MSBC_ENABLE_PARAM_SIZE);
+            } else {
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + MSBC_DISABLE_PARAM_SIZE;
+                *p++ = MSBC_DISABLE_PARAM_SIZE;
+                memcpy(p, &msbc_disable_param, MSBC_DISABLE_PARAM_SIZE);
+            }
+
+            if (!pthread_mutex_lock(&lpm_mutex)) {
+                hw_wbs_cb_state = HW_WBS_CODEC;
+                if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_MSBC_ENABLE_PARAM,\
+                                p_buf, hw_enable_mSBC_codec_cback)) == FALSE)
+                {
+                    bt_vendor_cbacks->dealloc(p_buf);
+                    pthread_mutex_unlock(&lpm_mutex);
+                }
+                else
+                    return;
+            }
+        }
+
+    if (bt_vendor_cbacks)
+    {
+        if (state)
+            ALOGE("enable mSBC aborted");
+        else
+            ALOGE("disable mSBC aborted");
+    }
+}
+#endif // (SCO_USE_I2S_INTERFACE == TRUE)
 
 /*******************************************************************************
 **
@@ -1478,15 +1673,15 @@ int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int par
 }
 #endif  //VENDOR_LIB_RUNTIME_TUNING_ENABLED
 
-static inline int set_param(char *p_name, char *p_value, int param, int size, \
+static inline int set_param(char *p_name, uint8_t p_value, int param, int size, \
                             const char *param_name[], uint8_t *bt_param)
 {
     int i;
-    ALOGE( "%s: parameter: %s value: %s", __func__, p_name, p_value);
+    BTHWDBG( "%s: parameter: %s value: %u", __func__, p_name, p_value);
 
     for (i = 0; i < size; i++) {
          if (strcmp(param_name[i], p_name) == 0) {
-           bt_param[i] = atoi(p_value);
+           bt_param[i] = p_value;
            return 0;
         }
     }
@@ -1496,7 +1691,6 @@ static inline int set_param(char *p_name, char *p_value, int param, int size, \
     return -EINVAL;
 }
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
 /*******************************************************************************
 **
 ** Function        hw_pcm_set_param
@@ -1510,7 +1704,7 @@ static inline int set_param(char *p_name, char *p_value, int param, int size, \
 int hw_pcm_set_param(char *p_name, char *p_value, int param)
 {
     return set_param(p_name, p_value, param, SCO_PCM_PARAM_SIZE, \
-                     sco_pcm_parameter_name, bt_sco_param);
+                     sco_pcm_parameter_name, bt_pcm_sco_param);
 }
 
 /*******************************************************************************
@@ -1523,13 +1717,13 @@ int hw_pcm_set_param(char *p_name, char *p_value, int param)
 **                 Otherwise : Fail
 **
 *******************************************************************************/
-int hw_pcm_fmt_set_param(char *p_name, char *p_value, int param)
+int hw_pcm_fmt_set_param(char *p_name, uint8_t p_value, int param)
 {
     return set_param(p_name, p_value, param, PCM_DATA_FORMAT_PARAM_SIZE, \
                      pcm_data_fmt_parameter_name, bt_pcm_data_fmt_param);
 }
 
-#else // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
+#if (SCO_USE_I2S_INTERFACE == TRUE)
 /*******************************************************************************
 **
 ** Function        hw_i2s_set_param
@@ -1540,13 +1734,34 @@ int hw_pcm_fmt_set_param(char *p_name, char *p_value, int param)
 **                 Otherwise : Fail
 **
 *******************************************************************************/
-int hw_i2s_set_param(char *p_name, char *p_value, int param)
+int hw_i2s_set_param(char *p_name, uint8_t p_value, int param)
 {
     return set_param(p_name, p_value, param, SCO_I2SPCM_PARAM_SIZE, \
-                     sco_i2s_parameter_name, bt_sco_param);
+                     sco_i2s_parameter_name, bt_i2s_sco_param);
 }
-#endif // (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
 
+/*******************************************************************************
+**
+** Function         hw_wbs_config
+**
+** Description      Configure WBS related hardware settings
+**
+** Returns          None
+**
+*******************************************************************************/
+void hw_wbs_enable(uint8_t wbs_state) {
+    if (wbs_state == TRUE) {
+        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", SCO_PCM_IF_CLOCK_RATE_WBS, 0);
+        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", SCO_I2SPCM_IF_SAMPLE_RATE_WBS, 0);
+        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", SCO_I2SPCM_IF_CLOCK_RATE_WBS, 0);
+    } else {
+        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", SCO_PCM_IF_CLOCK_RATE, 0);
+        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", SCO_I2SPCM_IF_SAMPLE_RATE, 0);
+        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", SCO_I2SPCM_IF_CLOCK_RATE, 0);
+    }
+    hw_enable_mSBC_codec(wbs_state);
+}
+#endif // (SCO_USE_I2S_INTERFACE == TRUE)
 
 /*****************************************************************************
 **   Sample Codes Section
