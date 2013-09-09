@@ -258,16 +258,6 @@
 #ifndef SCO_I2SPCM_IF_CLOCK_RATE
 #define SCO_I2SPCM_IF_CLOCK_RATE        1
 #endif
-
-/* SCO I2S configuration for enabling WBS */
-#ifndef SCO_I2SPCM_IF_SAMPLE_RATE_WBS
-#define SCO_I2SPCM_IF_SAMPLE_RATE_WBS   ((SCO_I2SPCM_IF_SAMPLE_RATE < 2) ? (SCO_I2SPCM_IF_SAMPLE_RATE + 1) : (2))
-#endif
-
-#ifndef SCO_I2SPCM_IF_CLOCK_RATE_WBS
-#define SCO_I2SPCM_IF_CLOCK_RATE_WBS    ((SCO_I2SPCM_IF_CLOCK_RATE < 4) ? (SCO_I2SPCM_IF_CLOCK_RATE + 1) : (4))
-#endif
-
 #endif // SCO_USE_I2S_INTERFACE
 
 
@@ -309,11 +299,6 @@
 /* SCO_PCM_IF_CLOCK_MODE - 0=Slave, 1=Master */
 #ifndef SCO_PCM_IF_CLOCK_MODE
 #define SCO_PCM_IF_CLOCK_MODE           1
-#endif
-
-/* SCO PCM configuration for enabling WBS */
-#ifndef SCO_PCM_IF_CLOCK_RATE_WBS
-#define SCO_PCM_IF_CLOCK_RATE_WBS       ((SCO_PCM_IF_CLOCK_RATE < 4) ? (SCO_PCM_IF_CLOCK_RATE + 1) : (4))
 #endif
 
 #define PCM_DATA_FORMAT_PARAM_SIZE      5
@@ -373,10 +358,6 @@
 #ifndef HW_END_WITH_HCI_RESET
 #define HW_END_WITH_HCI_RESET    TRUE
 #endif
-
-/* mSBC ENCODER command parameter size */
-#define MSBC_ENABLE_PARAM_SIZE          3
-#define MSBC_DISABLE_PARAM_SIZE         1
 
 /******************************************************************************
 **  Extern variables and functions

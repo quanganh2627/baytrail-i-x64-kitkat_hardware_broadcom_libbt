@@ -221,17 +221,6 @@ static int op(bt_vendor_opcode_t opcode, void *param)
             }
             break;
 
-        case BT_VND_OP_WBS_CFG:
-            {
-#if (SCO_USE_I2S_INTERFACE == TRUE)
-                uint8_t *state = (uint8_t *) param;
-                hw_wbs_enable(*state);
-#else
-                ALOGE("WBS configuration not supported without I2S");
-#endif // (SCO_USE_I2S_INTERFACE == TRUE)
-            }
-            break;
-
         case BT_VND_OP_EPILOG:
             {
 #if (HW_END_WITH_HCI_RESET == FALSE)
