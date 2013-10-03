@@ -194,8 +194,9 @@ void vnd_load_prop()
 
     while (p_entry->conf_entry != NULL)
     {
-        strcpy(prop_key, "ro.bt.vnd.");
-        strcat(prop_key, p_entry->conf_entry);
+        const char *prefix = "ro.bt.vnd.";
+        strcpy(prop_key, prefix);
+        strncat(prop_key, p_entry->conf_entry, PROPERTY_KEY_MAX - 1 - strlen(prefix));
         property_get(prop_key, prop_value, NULL);
         if (prop_value != NULL) {
             p_entry->p_action((char *)p_entry->conf_entry, prop_value,
