@@ -8,13 +8,14 @@ BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
 
 include $(TOP_DIR)device/intel/common/ComboChipVendor.mk
 
+# BCM configuration
+ifeq ($(COMBO_CHIP_VENDOR), bcm)
+
 LOCAL_MODULE := libbt-vendor
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
 
-# BCM configuration
-ifeq ($(COMBO_CHIP_VENDOR), bcm)
     LOCAL_C_INCLUDES := \
         $(BDROID_DIR)/hci/include \
         $(LOCAL_PATH)/include
@@ -27,12 +28,19 @@ ifeq ($(COMBO_CHIP_VENDOR), bcm)
     LOCAL_SHARED_LIBRARIES := libcutils
     LOCAL_MODULE_OWNER := broadcom
     include $(LOCAL_PATH)/vnd_buildcfg.mk
+
+include $(BUILD_SHARED_LIBRARY)
 endif
 # end of BCM configuration
 
 
 # TI configuration
 ifeq ($(COMBO_CHIP_VENDOR), ti)
+LOCAL_MODULE := libbt-vendor
+LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_CLASS := SHARED_LIBRARIES
+LOCAL_MODULE_PATH := $(TARGET_OUT_VENDOR_SHARED_LIBRARIES)
+
     LOCAL_PATH := $(ANDROID_BUILD_TOP)
     TI_BT_VENDOR_PATH := hardware/ti/wpan/bluedroid_wilink
     LOCAL_C_INCLUDES := $(BDROID_DIR)/hci/include
@@ -43,10 +51,11 @@ ifeq ($(COMBO_CHIP_VENDOR), ti)
         libnativehelper \
         libutils
     LOCAL_MODULE_OWNER := ti
+
+include $(BUILD_SHARED_LIBRARY)
 endif
 # end of TI configuration
 
-include $(BUILD_SHARED_LIBRARY)
 
 # LOCAL_PATH needs to be redefine in case TI configuration is used
 LOCAL_PATH := $(call my-dir)
