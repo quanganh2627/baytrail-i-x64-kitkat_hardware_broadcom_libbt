@@ -1482,7 +1482,7 @@ static inline int set_param(char *p_name, char *p_value, int param, int size, \
                             const char *param_name[], uint8_t *bt_param)
 {
     int i;
-    ALOGE( "%s: parameter: %s value: %s", __func__, p_name, p_value);
+    ALOGI( "%s: parameter: %s value: %s", __func__, p_name, p_value);
 
     for (i = 0; i < size; i++) {
          if (strcmp(param_name[i], p_name) == 0) {
