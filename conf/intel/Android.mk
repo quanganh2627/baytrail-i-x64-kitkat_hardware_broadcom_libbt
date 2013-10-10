@@ -7,6 +7,7 @@ LOCAL_MODULE_TAGS := optional
 ifeq (, $(filter %_next, $(TARGET_PRODUCT)))
 LOCAL_REQUIRED_MODULES := \
 	bt_baylake.conf \
+	bt_baylake_edk2.conf \
 	bt_byt_m_crb.conf \
 	bt_byt_t_ffrd8.conf \
 	bt_ctp7160.conf \
