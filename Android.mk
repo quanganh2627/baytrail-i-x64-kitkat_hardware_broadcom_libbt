@@ -1,3 +1,5 @@
+ifneq ($(BOARD_USES_WCS),true)
+
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -61,3 +63,5 @@ endif
 ifeq ($(TARGET_PRODUCT), full_wingray)
     include $(LOCAL_PATH)/conf/moto/wingray/Android.mk
 endif
+
+endif # BOARD_USES_WCS != true
