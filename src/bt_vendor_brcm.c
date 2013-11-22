@@ -27,6 +27,7 @@
 #define LOG_TAG "bt_vendor"
 
 #include <utils/Log.h>
+#include <cutils/properties.h>
 #include "bt_vendor_brcm.h"
 #include "upio.h"
 #include "userial_vendor.h"
@@ -46,12 +47,14 @@
 ******************************************************************************/
 
 void hw_config_start(void);
+void hw_config_cleanup(void);
 uint8_t hw_lpm_enable(uint8_t turn_on);
 uint32_t hw_lpm_get_idle_timeout(void);
 void hw_lpm_set_wake_state(uint8_t wake_assert);
 #if (SCO_CFG_INCLUDED == TRUE)
 void hw_sco_config(void);
 #endif
+void vnd_load_prop();
 void vnd_load_conf(const char *p_path);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
@@ -90,6 +93,7 @@ static const tUSERIAL_CFG userial_init_cfg =
 
 static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
 {
+    char lib_conf_file[PROPERTY_VALUE_MAX];
     ALOGI("init");
 
     if (p_cb == NULL)
@@ -114,7 +118,12 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     userial_vendor_init();
     upio_init();
 
-    vnd_load_conf(VENDOR_LIB_CONF_FILE);
+    /* Load first the configuration through properties */
+    vnd_load_prop();
+
+    /* Then the file configuration can overwrite them */
+    property_get("ro.bt.conf_file", lib_conf_file, VENDOR_LIB_CONF_FILE);
+    vnd_load_conf(lib_conf_file);
 
     /* store reference to user callbacks */
     bt_vendor_cbacks = (bt_vendor_callbacks_t *) p_cb;
@@ -131,12 +140,11 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 {
     int retval = 0;
 
-    BTVNDDBG("op for %d", opcode);
-
     switch(opcode)
     {
         case BT_VND_OP_POWER_CTRL:
             {
+                BTVNDDBG("op: BT_VND_OP_POWER_CTRL");
                 int *state = (int *) param;
                 if (*state == BT_VND_PWR_OFF)
                     upio_set_bluetooth_power(UPIO_BT_POWER_OFF);
@@ -147,12 +155,14 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_FW_CFG:
             {
+                BTVNDDBG("op: BT_VND_OP_FW_CFG");
                 hw_config_start();
             }
             break;
 
         case BT_VND_OP_SCO_CFG:
             {
+                BTVNDDBG("op: BT_VND_OP_SCO_CFG");
 #if (SCO_CFG_INCLUDED == TRUE)
                 hw_sco_config();
 #else
@@ -163,6 +173,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_USERIAL_OPEN:
             {
+                BTVNDDBG("op: BT_VND_OP_USERIAL_OPEN");
                 int (*fd_array)[] = (int (*)[]) param;
                 int fd, idx;
                 fd = userial_vendor_open((tUSERIAL_CFG *) &userial_init_cfg);
@@ -179,12 +190,14 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_USERIAL_CLOSE:
             {
+                BTVNDDBG("op: BT_VND_OP_USERIAL_CLOSE");
                 userial_vendor_close();
             }
             break;
 
         case BT_VND_OP_GET_LPM_IDLE_TIMEOUT:
             {
+                BTVNDDBG("op: BT_VND_OP_GET_LPM_IDLE_TIMEOUT");
                 uint32_t *timeout_ms = (uint32_t *) param;
                 *timeout_ms = hw_lpm_get_idle_timeout();
             }
@@ -192,6 +205,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_LPM_SET_MODE:
             {
+                BTVNDDBG("op: BT_VND_OP_LPM_SET_MODE");
                 uint8_t *mode = (uint8_t *) param;
                 retval = hw_lpm_enable(*mode);
             }
@@ -230,6 +244,7 @@ static void cleanup( void )
     BTVNDDBG("cleanup");
 
     upio_cleanup();
+    hw_config_cleanup();
 
     bt_vendor_cbacks = NULL;
 }
