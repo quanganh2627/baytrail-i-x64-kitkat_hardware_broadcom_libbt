@@ -12,7 +12,8 @@ LOCAL_REQUIRED_MODULES := \
 	bt_byt_t_ffrd8.conf \
 	bt_ctp7160.conf \
 	bt_redhookbay.conf \
-	bt_saltbay.conf
+	bt_saltbay.conf \
+	bt_mofd_v0.conf
 else
 LOCAL_REQUIRED_MODULES := \
 	bt_baylake_next.conf \
