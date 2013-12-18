@@ -197,8 +197,8 @@ void vnd_load_prop()
         const char *prefix = "ro.bt.vnd.";
         strcpy(prop_key, prefix);
         strncat(prop_key, p_entry->conf_entry, PROPERTY_KEY_MAX - 1 - strlen(prefix));
-        property_get(prop_key, prop_value, NULL);
-        if (prop_value != NULL) {
+        //check that property value is not empty
+        if (property_get(prop_key, prop_value, NULL) > 0) {
             p_entry->p_action((char *)p_entry->conf_entry, prop_value,
                                                            p_entry->param);
             ALOGI("%s set to %s through property", p_entry->conf_entry,
