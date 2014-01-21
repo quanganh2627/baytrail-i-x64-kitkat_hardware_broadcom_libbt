@@ -118,13 +118,13 @@ static char *lpm_state[] = {
 *****************************************************************************/
 static int is_emulator_context(void)
 {
-    char value[PROPERTY_VALUE_MAX];
+    /*char value[PROPERTY_VALUE_MAX];
 
     property_get("ro.kernel.qemu", value, "0");
     UPIODBG("is_emulator_context : %s", value);
     if (strcmp(value, "1") == 0) {
         return 1;
-    }
+    }*/
     return 0;
 }
 
