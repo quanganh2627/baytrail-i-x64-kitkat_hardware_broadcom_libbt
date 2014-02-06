@@ -4,9 +4,9 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
-BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
+BDROID_DIR := external/bluetooth/bluedroid
 
-include $(TOP_DIR)device/intel/common/ComboChipVendor.mk
+-include device/intel/common/ComboChipVendor.mk
 
 # BCM configuration
 ifeq ($(COMBO_CHIP_VENDOR), bcm)
