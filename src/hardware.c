@@ -138,8 +138,10 @@ typedef struct
 /* Hardware SCO Configuration State */
 enum hw_sco_state {
     HW_SCO_PCM,
-    HW_SCO_PCM_FORMAT,
-    HW_SCO_I2S
+    HW_SCO_PCM_FORMAT
+#if (SCO_USE_I2S_INTERFACE == TRUE)
+    , HW_SCO_I2S
+#endif
 };
 
 /* Hardware Codec Configuration State */
@@ -357,7 +359,7 @@ uint32_t look_up_fw_settlement_delay (void)
         ret_value = p_entry->delay_time;
     }
 
-    BTHWDBG( "Settlement delay -- %d ms", ret_value);
+    BTHWDBG( "Settlement delay -- %u ms", ret_value);
 
     return (ret_value);
 }
@@ -430,7 +432,7 @@ uint8_t line_speed_to_userial_baud(uint32_t line_speed)
         baud = USERIAL_BAUD_600;
     else
     {
-        ALOGE( "userial vendor: unsupported baud speed %d", line_speed);
+        ALOGE( "userial vendor: unsupported baud speed %u", line_speed);
         baud = USERIAL_BAUD_115200;
     }
 
@@ -1576,15 +1578,15 @@ int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int par
 }
 #endif  //VENDOR_LIB_RUNTIME_TUNING_ENABLED
 
-static inline int set_param(char *p_name, uint8_t p_value, int param, int size, \
+static inline int set_param(char *p_name, uint8_t value, int param, int size, \
                             const char *param_name[], uint8_t *bt_param)
 {
     int i;
-    BTHWDBG( "%s: parameter: %s value: %u", __func__, p_name, p_value);
+    BTHWDBG( "%s: parameter: %s value: %u", __func__, p_name, value);
 
     for (i = 0; i < size; i++) {
          if (strcmp(param_name[i], p_name) == 0) {
-           bt_param[i] = p_value;
+           bt_param[i] = value;
            return 0;
         }
     }
@@ -1606,7 +1608,10 @@ static inline int set_param(char *p_name, uint8_t p_value, int param, int size, 
 *******************************************************************************/
 int hw_pcm_set_param(char *p_name, char *p_value, int param)
 {
-    return set_param(p_name, p_value, param, SCO_PCM_PARAM_SIZE, \
+    uint8_t value;
+    value = atoi(p_value);
+
+    return set_param(p_name, value, param, SCO_PCM_PARAM_SIZE, \
                      sco_pcm_parameter_name, bt_pcm_sco_param);
 }
 
@@ -1620,9 +1625,12 @@ int hw_pcm_set_param(char *p_name, char *p_value, int param)
 **                 Otherwise : Fail
 **
 *******************************************************************************/
-int hw_pcm_fmt_set_param(char *p_name, uint8_t p_value, int param)
+int hw_pcm_fmt_set_param(char *p_name, char *p_value, int param)
 {
-    return set_param(p_name, p_value, param, PCM_DATA_FORMAT_PARAM_SIZE, \
+    uint8_t value;
+    value = atoi(p_value);
+
+    return set_param(p_name, value, param, PCM_DATA_FORMAT_PARAM_SIZE, \
                      pcm_data_fmt_parameter_name, bt_pcm_data_fmt_param);
 }
 
@@ -1637,9 +1645,12 @@ int hw_pcm_fmt_set_param(char *p_name, uint8_t p_value, int param)
 **                 Otherwise : Fail
 **
 *******************************************************************************/
-int hw_i2s_set_param(char *p_name, uint8_t p_value, int param)
+int hw_i2s_set_param(char *p_name, char *p_value, int param)
 {
-    return set_param(p_name, p_value, param, SCO_I2SPCM_PARAM_SIZE, \
+    uint8_t value;
+    value = atoi(p_value);
+
+    return set_param(p_name, value, param, SCO_I2SPCM_PARAM_SIZE, \
                      sco_i2s_parameter_name, bt_i2s_sco_param);
 }
 
@@ -1654,14 +1665,22 @@ int hw_i2s_set_param(char *p_name, uint8_t p_value, int param)
 *******************************************************************************/
 void hw_wbs_enable(uint8_t wbs_state)
 {
+    char p_value[sizeof(char) + 1];
+
     if (wbs_state == TRUE) {
-        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", SCO_PCM_IF_CLOCK_RATE_WBS, 0);
-        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", SCO_I2SPCM_IF_SAMPLE_RATE_WBS, 0);
-        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", SCO_I2SPCM_IF_CLOCK_RATE_WBS, 0);
+        sprintf(p_value, "%d", SCO_PCM_IF_CLOCK_RATE_WBS);
+        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", p_value, 0);
+        sprintf(p_value, "%d", SCO_I2SPCM_IF_SAMPLE_RATE_WBS);
+        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", p_value, 0);
+        sprintf(p_value, "%d", SCO_I2SPCM_IF_CLOCK_RATE_WBS);
+        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", p_value, 0);
     } else {
-        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", SCO_PCM_IF_CLOCK_RATE, 0);
-        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", SCO_I2SPCM_IF_SAMPLE_RATE, 0);
-        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", SCO_I2SPCM_IF_CLOCK_RATE, 0);
+        sprintf(p_value, "%d", SCO_PCM_IF_CLOCK_RATE);
+        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", p_value, 0);
+        sprintf(p_value, "%d", SCO_I2SPCM_IF_SAMPLE_RATE);
+        hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", p_value, 0);
+        sprintf(p_value, "%d", SCO_I2SPCM_IF_CLOCK_RATE);
+        hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", p_value, 0);
     }
     hw_enable_mSBC_codec(wbs_state);
 }
