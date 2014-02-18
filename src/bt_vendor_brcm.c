@@ -118,12 +118,12 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     userial_vendor_init();
     upio_init();
 
-    /* Load first the configuration through properties */
-    vnd_load_prop();
-
-    /* Then the file configuration can overwrite them */
+    /* The configuration file overrides previous configuration */
     property_get("ro.bt.conf_file", lib_conf_file, VENDOR_LIB_CONF_FILE);
     vnd_load_conf(lib_conf_file);
+
+    /* Properties values override previous configuration */
+    vnd_load_prop();
 
     /* store reference to user callbacks */
     bt_vendor_cbacks = (bt_vendor_callbacks_t *) p_cb;
