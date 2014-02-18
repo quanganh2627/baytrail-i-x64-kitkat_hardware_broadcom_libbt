@@ -164,13 +164,17 @@ void vnd_load_conf(const char *p_path)
 
                 p_entry++;
             }
-        }
 
+            if (p_entry->conf_entry == NULL)
+            {
+                ALOGW("%s: No action found for param %s = %s", __func__, p_name, p_value);
+            }
+        }
         fclose(p_file);
     }
     else
     {
-        ALOGI( "vnd_load_conf file >%s< not found", p_path);
+        ALOGI("vnd_load_conf file >%s< not found", p_path);
     }
 }
 
@@ -194,10 +198,10 @@ void vnd_load_prop()
 
     while (p_entry->conf_entry != NULL)
     {
-        const char *prefix = "ro.bt.vnd.";
+        const char *prefix = "bt.";
         strcpy(prop_key, prefix);
         strncat(prop_key, p_entry->conf_entry, PROPERTY_KEY_MAX - 1 - strlen(prefix));
-        //check that property value is not empty
+        /* check that property value is not empty */
         if (property_get(prop_key, prop_value, NULL) > 0) {
             p_entry->p_action((char *)p_entry->conf_entry, prop_value,
                                                            p_entry->param);
