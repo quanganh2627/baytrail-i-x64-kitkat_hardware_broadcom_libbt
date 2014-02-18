@@ -1668,15 +1668,11 @@ void hw_wbs_enable(uint8_t wbs_state)
     char p_value[sizeof(char) + 1];
 
     if (wbs_state == TRUE) {
-        sprintf(p_value, "%d", SCO_PCM_IF_CLOCK_RATE_WBS);
-        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", p_value, 0);
         sprintf(p_value, "%d", SCO_I2SPCM_IF_SAMPLE_RATE_WBS);
         hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", p_value, 0);
         sprintf(p_value, "%d", SCO_I2SPCM_IF_CLOCK_RATE_WBS);
         hw_i2s_set_param("SCO_I2SPCM_IF_CLOCK_RATE", p_value, 0);
     } else {
-        sprintf(p_value, "%d", SCO_PCM_IF_CLOCK_RATE);
-        hw_pcm_set_param("SCO_PCM_IF_CLOCK_RATE", p_value, 0);
         sprintf(p_value, "%d", SCO_I2SPCM_IF_SAMPLE_RATE);
         hw_i2s_set_param("SCO_I2SPCM_IF_SAMPLE_RATE", p_value, 0);
         sprintf(p_value, "%d", SCO_I2SPCM_IF_CLOCK_RATE);

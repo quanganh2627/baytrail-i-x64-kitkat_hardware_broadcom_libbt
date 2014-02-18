@@ -311,11 +311,6 @@
 #define SCO_PCM_IF_CLOCK_MODE           1
 #endif
 
-/* SCO PCM configuration for enabling WBS */
-#ifndef SCO_PCM_IF_CLOCK_RATE_WBS
-#define SCO_PCM_IF_CLOCK_RATE_WBS       ((SCO_PCM_IF_CLOCK_RATE < 4) ? (SCO_PCM_IF_CLOCK_RATE + 1) : (4))
-#endif
-
 #define PCM_DATA_FORMAT_PARAM_SIZE      5
 
 /* PCM_DATA_FMT_SHIFT_MODE
