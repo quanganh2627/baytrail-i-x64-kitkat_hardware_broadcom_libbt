@@ -1,4 +1,4 @@
-ifneq ($(BOARD_USES_WCS),true)
+ifeq ($(BOARD_HAVE_BLUETOOTH_BCM),true)
 
 LOCAL_PATH := $(call my-dir)
 
@@ -73,4 +73,4 @@ ifeq ($(TARGET_PRODUCT), full_wingray)
     include $(LOCAL_PATH)/conf/moto/wingray/Android.mk
 endif
 
-endif # BOARD_USES_WCS != true
+endif # BOARD_HAVE_BLUETOOTH_BCM
