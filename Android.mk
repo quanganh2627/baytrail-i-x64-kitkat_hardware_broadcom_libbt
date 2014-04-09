@@ -1,4 +1,4 @@
-ifneq ($(BOARD_USES_WCS),true)
+ifneq ($(COMBO_CHIP_VENDOR), intel)
 
 LOCAL_PATH := $(call my-dir)
 
@@ -73,4 +73,4 @@ ifeq ($(TARGET_PRODUCT), full_wingray)
     include $(LOCAL_PATH)/conf/moto/wingray/Android.mk
 endif
 
-endif # BOARD_USES_WCS != true
+endif # COMBO_CHIP_VENDOR != intel
