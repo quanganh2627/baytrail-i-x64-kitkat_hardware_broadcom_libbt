@@ -56,6 +56,10 @@ void vnd_load_conf(const char *p_path);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
 #endif
+#ifdef USE_CELLULAR_COEX
+int hci_bind_client_init(void);
+int hci_bind_client_cleanup(void);
+#endif
 
 /******************************************************************************
 **  Variables
@@ -121,6 +125,11 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
 
     /* This is handed over from the stack */
     memcpy(vnd_local_bd_addr, local_bdaddr, 6);
+
+#ifdef USE_CELLULAR_COEX
+    /* Start the Bindable Server */
+    hci_bind_client_init();
+#endif
 
     return 0;
 }
@@ -238,6 +247,10 @@ static void cleanup( void )
     upio_cleanup();
 
     bt_vendor_cbacks = NULL;
+
+#ifdef USE_CELLULAR_COEX
+    hci_bind_client_cleanup();
+#endif
 }
 
 // Entry point of DLib
