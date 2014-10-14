@@ -38,6 +38,7 @@
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
+#define BTHCISERVICE_DBG TRUE
 
 #ifndef BTHCISERVICE_DBG
 #define BTHCISERVICE_DBG FALSE

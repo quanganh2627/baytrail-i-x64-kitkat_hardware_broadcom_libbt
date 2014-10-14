@@ -127,6 +127,7 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     memcpy(vnd_local_bd_addr, local_bdaddr, 6);
 
 #ifdef USE_CELLULAR_COEX
+    /* Start the Bindable Server */
     hci_bind_client_init();
 #endif
 
