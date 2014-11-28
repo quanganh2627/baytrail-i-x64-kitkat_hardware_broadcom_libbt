@@ -21,10 +21,11 @@ LOCAL_SHARED_LIBRARIES := \
         libcutils \
         liblog
 
-ifeq ($(strip $(BOARD_USE_CELLULAR_COEX)),true)
+ifeq ($(BOARD_HAVE_CELLCOEX),true)
+    $(warning "BT Cellular Coexistence suuport ON")
     LOCAL_REQUIRED_MODULES += libbtvendorcellcoex-client
-       LOCAL_SRC_FILES += src/hci_service.c
-       LOCAL_CFLAGS += -DUSE_CELLULAR_COEX
+    LOCAL_SRC_FILES += src/hci_service.c
+    LOCAL_CFLAGS += -DUSE_CELLULAR_COEX
     LOCAL_SHARED_LIBRARIES += \
                libstlport \
                libbinder \
@@ -39,19 +40,6 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_OWNER := broadcom
 LOCAL_PROPRIETARY_MODULE := true
-
-ifeq ($(strip $(BOARD_USE_CELLULAR_COEX)),true)
-    LOCAL_REQUIRED_MODULES += libbtvendorcellcoex-client
-    LOCAL_SRC_FILES += src/hci_service.c
-    LOCAL_CFLAGS := -DUSE_CELLULAR_COEX
-    LOCAL_SHARED_LIBRARIES += \
-        libstlport \
-        libbinder \
-        libutils \
-        libandroid_runtime \
-        liblog \
-        libbtvendorcellcoex-client
-endif
 
 include $(LOCAL_PATH)/vnd_buildcfg.mk
 
