@@ -21,7 +21,8 @@ LOCAL_SHARED_LIBRARIES := \
         libcutils \
         liblog
 
-ifeq ($(strip $(BOARD_USE_CELLULAR_COEX)),true)
+ifeq ($(BOARD_HAVE_CELLCOEX),true)
+    $(warning "BT Cellular Coexistence suuport ON")
     LOCAL_REQUIRED_MODULES += libbtvendorcellcoex-client
     LOCAL_SRC_FILES += src/hci_service.c
     LOCAL_CFLAGS += -DUSE_CELLULAR_COEX
