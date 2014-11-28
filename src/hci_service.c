@@ -80,10 +80,11 @@
 **  Static Variables
 ******************************************************************************/
 static uint8_t status = -1;
+static pthread_attr_t joinable_thread_attr;
 static pthread_cond_t thread_cond;
 static pthread_mutex_t mutex;
 static bool predicate = false;
-static volatile bool hci_service_stopped = false;
+static int bind_state = BTCELLCOEX_STATUS_NO_INIT;
 static pthread_t init_thread;
 
 /******************************************************************************
@@ -91,8 +92,10 @@ static pthread_t init_thread;
 ******************************************************************************/
 static int hci_cmd_send(const size_t cmdLen, const void* cmdBuf);
 void hci_bind_client_cleanup(void);
+static void hci_service_cleanup(void);
+static void thread_cleanup(int sig);
 static void print_xmit(HC_BT_HDR *p_msg);
-static void *retry_init_thread(void* param);
+static void *retry_init_thread(void);
 
 /*******************************************************************************
 **
@@ -106,11 +109,39 @@ static void *retry_init_thread(void* param);
 *******************************************************************************/
 void hci_bind_client_init(void)
 {
-    int ret = -1;
-    int bind_state = BTCELLCOEX_STATUS_NO_INIT;
-    pthread_attr_t thread_attr;
+    struct sigaction sa;
+    int ret;
 
     BTHSVERB("%s enter", __FUNCTION__);
+
+    bind_state = bindToCoexService(&hci_cmd_send);
+    if(bind_state != BTCELLCOEX_STATUS_OK) {
+        ALOGD("%s: bindToCoexService failure, planning to retry later", __FUNCTION__);
+
+        memset(&sa, 0, sizeof(sa));
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sa.sa_handler = &thread_cleanup;
+        if (sigaction(SIGTERM, &sa, NULL) != 0) {
+            ALOGE("%s: sigaction failed: %s", __FUNCTION__, strerror(errno));
+            goto thread_fail;
+        }
+        BTHSDBG("%s: Create a thread on service", __FUNCTION__);
+        if ((ret = pthread_attr_init(&joinable_thread_attr)) != 0) {
+            ALOGE("%s: pthread_attr_init failed: %s", __FUNCTION__, strerror(ret));
+            goto thread_fail;
+        }
+        if ((ret = pthread_attr_setdetachstate(&joinable_thread_attr,
+                                                 PTHREAD_CREATE_JOINABLE)) != 0) {
+            ALOGE("%s: pthread_attr_setdetachstate failed: %s", __FUNCTION__, strerror(ret));
+            goto thread_fail;
+        }
+        if ((ret = pthread_create(&init_thread, &joinable_thread_attr,
+                                  retry_init_thread, NULL)) != 0) {
+            ALOGE("%s: pthread_create failed: %s", __FUNCTION__, strerror(ret));
+            goto thread_fail;
+        }
+    }
 
     if ((ret = pthread_cond_init(&thread_cond, NULL)) != 0) {
         BTHSERR("%s: pthread_cond_init failed: %s", __FUNCTION__, strerror(ret));
@@ -151,6 +182,42 @@ void hci_bind_client_init(void)
     }
 
     BTHSVERB("%s exit", __FUNCTION__);
+    return;
+
+thread_fail:
+    thread_cleanup(100);
+fail:
+    hci_service_cleanup();
+    return;
+}
+
+/*******************************************************************************
+**
+** Function         hci_bind_client_cleanup
+**
+** Description     Cleanup of the client including the retry init thread.
+**
+** Returns          None
+**
+*******************************************************************************/
+void hci_bind_client_cleanup(void)
+{
+int ret = -1;
+BTHSDBG("%s", __FUNCTION__);
+
+    // kill the retry init thread if it's running
+    if(bind_state != BTCELLCOEX_STATUS_OK) {
+        if ((ret = pthread_kill(init_thread, SIGTERM)) != 0)
+            ALOGE("%s: pthread_kill failed: %s", __FUNCTION__, strerror(ret));
+        if ((ret = pthread_join(init_thread, NULL)) != 0)
+            ALOGE("%s: pthread_join failed: %s", __FUNCTION__, strerror(ret));
+    }
+
+    hci_service_cleanup();
+
+    BTHSDBG("%s done.", __FUNCTION__);
+
+    return;
 }
 
 /*******************************************************************************
@@ -159,32 +226,26 @@ void hci_bind_client_init(void)
 **
 ** Description     Thread handling the binding retry in case the modem is not
 ** ready and so the BT handler and its binder doesn't exist.
-** param not necessary but compiler friendly.
 **
 ** Returns          None
 **
 *******************************************************************************/
-static void *retry_init_thread(void* param)
+static void *retry_init_thread(void)
 {
     int seconds = 1;
-    int bind_retry = BTCELLCOEX_STATUS_NO_INIT;
 
     BTHSDBG("%s", __FUNCTION__);
 
     for(;;) {
-        if (hci_service_stopped) {
-            BTHSDBG("%s: hci_service_stopped, retry_init_thread exit", __FUNCTION__);
-            pthread_exit(NULL);
-        }
         BTHSVERB("%s: Wait before retrying to bind", __FUNCTION__);
         sleep(seconds);
         if (seconds < 10)
             seconds++;
-        bind_retry = bindToCoexService(&hci_cmd_send);
-        if(bind_retry != BTCELLCOEX_STATUS_OK) {
-            BTHSDBG("%s: bindToCoexService failure, retry in %d seconds", __FUNCTION__, seconds);
+        bind_state = bindToCoexService(&hci_cmd_send);
+        if(bind_state != BTCELLCOEX_STATUS_OK) {
+            ALOGD("%s: bindToCoexService failure, retry in %d seconds", __FUNCTION__, seconds);
         } else {
-            BTHSDBG("%s: bindToCoexService success", __FUNCTION__);
+            ALOGD("%s: bindToCoexService success", __FUNCTION__);
             break;
         }
     }
@@ -192,22 +253,32 @@ static void *retry_init_thread(void* param)
     return NULL; // Not necessary but compiler friendly
 }
 
+static void thread_cleanup(int sig)
+{
+    int ret = -1;
+    BTHSDBG("%s called with signal %d", __FUNCTION__, sig);
+
+    if ((ret = pthread_attr_destroy(&joinable_thread_attr)) != 0)
+        ALOGE("%s: pthread_attr_destroy failed: %s", __FUNCTION__, strerror(ret));
+
+    pthread_exit(NULL);
+
+    return;
+}
+
 /*******************************************************************************
 **
-** Function         hci_bind_client_cleanup
+** Function         hci_service_cleanup
 **
-** Description     Function called to stop the thread, forbids the service use
-**                 and clean service ressources
+** Description     Function called to clean service ressources
 **
 ** Returns          None
 **
 *******************************************************************************/
-void hci_bind_client_cleanup(void)
+static void hci_service_cleanup(void)
 {
     int ret = -1;
     BTHSDBG("%s", __FUNCTION__);
-
-    hci_service_stopped = true;
 
     if ((ret = pthread_mutex_destroy(&mutex)) != 0)
         BTHSWARN("%s: pthread_mutex_destroy failed: %s", __FUNCTION__, strerror(ret));
@@ -327,18 +398,14 @@ int hci_cmd_send(const size_t cmdLen, const void* cmdBuf)
         return BTCELLCOEX_STATUS_UNKNOWN_ERROR;
     }
 
-    // Send the HCI command
-    if (bt_vendor_cbacks->xmit_cb(opcode, p_msg, hci_cmd_cback) == FALSE) {
-        BTHSERR("%s: failed to xmit buffer.", __FUNCTION__);
-        bt_vendor_cbacks->dealloc(p_msg);
-        retVal = BTCELLCOEX_STATUS_UNKNOWN_ERROR;
-        goto exit_unlock;
-    }
-
     gettimeofday(&currentTime, NULL);
-    ts.tv_nsec = (currentTime.tv_usec * 1000) + (WAIT_TIME_MS % 1000) * 1000000;
-    ts.tv_sec = currentTime.tv_sec + (WAIT_TIME_MS / 1000) + (ts.tv_nsec / 1000000000);
-    ts.tv_nsec %= 1000000000;
+    currentTime.tv_usec += 1000 * WAIT_TIME_MS;
+    if (currentTime.tv_usec >= 1000000) {
+        ++currentTime.tv_sec;
+        currentTime.tv_usec -= 1000000;
+    }
+    timeToWait.tv_sec = currentTime.tv_sec;
+    timeToWait.tv_nsec = (currentTime.tv_usec + 1000 * WAIT_TIME_MS) * 1000;
 
     ret = 0;
     while (!predicate && ret == 0)
