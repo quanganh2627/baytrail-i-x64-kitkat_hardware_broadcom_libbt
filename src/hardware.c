@@ -88,7 +88,7 @@
 #define UPDATE_BAUDRATE_CMD_PARAM_SIZE          6
 #define HCI_CMD_PREAMBLE_SIZE                   3
 #define HCD_REC_PAYLOAD_LEN_BYTE                2
-#define BD_ADDR_LEN                             6
+
 #define LOCAL_NAME_BUFFER_LEN                   32
 #define LOCAL_BDADDR_PATH_BUFFER_LEN            256
 
@@ -601,6 +601,73 @@ static uint8_t hw_config_read_bdaddr(HC_BT_HDR *p_buf)
 }
 #endif // (USE_CONTROLLER_BDADDR == TRUE)
 
+
+#if (USE_CONTROLLER_BDADDR == TRUE)
+/*******************************************************************************
+**
+** Function         hw_config_valid_bdaddr
+**
+** Description      validate the bdaddr provided
+**                  check that the address does not met an address stock
+**                  in factory_chip_pattern with a particular pattern
+**
+** Returns          TRUE, if address is valid
+**                  FALSE, otherwise
+**
+*******************************************************************************/
+static uint8_t hw_config_valid_bdaddr(char *bdaddr_to_valid )
+{
+    uint8_t retval = TRUE;
+    uint8_t indexTab, idxPattern;
+    uint8_t bad_addr = 0;
+    uint8_t nbPatternBad = 0; /* Number of times the pattern is met*/
+
+
+    ALOGD("%s\n,address to validate: %02X:%02X:%02X:%02X:%02X:%02X",
+                            __FUNCTION__,
+                            *((unsigned char *)bdaddr_to_valid+5),
+                            *((unsigned char *)bdaddr_to_valid+4),
+                            *((unsigned char *)bdaddr_to_valid+3),
+                            *((unsigned char *)bdaddr_to_valid+2),
+                            *((unsigned char *)bdaddr_to_valid+1),
+                            *((unsigned char *)bdaddr_to_valid) );
+    for (indexTab = 0 ;
+            retval && indexTab < sizeof(factory_chip_pattern)/sizeof(address_pattern) ;
+            indexTab++)
+    {
+        nbPatternBad = 0;
+        uint8_t *addFromTable = factory_chip_pattern[indexTab].value;
+        ALOGI("Address from tab: %02X:%02X:%02X:%02X:%02X:%02X, pattern: %d",
+                *(addFromTable+0), *(addFromTable+1), *(addFromTable+2),
+                *(addFromTable+3), *(addFromTable+4), *(addFromTable+5),
+                factory_chip_pattern[indexTab].size);
+
+        for (idxPattern = 0;
+                idxPattern < factory_chip_pattern[indexTab].size && idxPattern < BD_ADDR_LEN;
+                idxPattern++)
+        {
+            /* The address is stocked in reverse order*/
+            if(bdaddr_to_valid[BD_ADDR_LEN-idxPattern-1] == addFromTable[idxPattern])
+            {
+                nbPatternBad++;
+            }
+        }
+        if (nbPatternBad == factory_chip_pattern[indexTab].size)
+        {
+            /* if the address met the pattern */
+            retval = FALSE;
+            ALOGI("address to validate matching %d th entry :\
+                    %02X:%02X:%02X:%02X:%02X:%02X"
+                    ,indexTab+1,
+                    *(addFromTable+0), *(addFromTable+1), *(addFromTable+2),
+                    *(addFromTable+3), *(addFromTable+4), *(addFromTable+5) );
+        }
+    }
+
+    return (retval);
+}
+#endif // (USE_CONTROLLER_BDADDR == TRUE)
+
 /*******************************************************************************
 **
 ** Function         hw_config_cback
@@ -620,9 +687,8 @@ void hw_config_cback(void *p_mem)
     uint8_t     is_proceeding = FALSE;
     int         i;
     int         delay=100;
-#if (USE_CONTROLLER_BDADDR == TRUE)
-    const uint8_t null_bdaddr[BD_ADDR_LEN] = {0,0,0,0,0,0};
-#endif
+
+
 
     status = *((uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_STATUS_RET_BYTE);
     p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
@@ -843,16 +909,22 @@ void hw_config_cback(void *p_mem)
                 p_tmp = (char *) (p_evt_buf + 1) + \
                          HCI_EVT_CMD_CMPL_LOCAL_BDADDR_ARRAY;
 
-                if (memcmp(p_tmp, null_bdaddr, BD_ADDR_LEN) == 0)
+                if (TRUE != hw_config_valid_bdaddr(p_tmp) )
                 {
-                    // Controller does not have a valid OTP BDADDR!
-                    // Set the BTIF initial BDADDR instead.
+                    /* Controller does not have a valid OTP BDADDR!
+                     * Set the BTIF initial BDADDR instead.
+                     * In case of BDA approvisioning, the address might be a factory address
+                     * which is not a valid address
+                     * */
+                    ALOGD("Controller does not have a valid OTP BDADDR: \
+                            Use the BDADDR from BTIF instead");
                     if ((is_proceeding = hw_config_set_bdaddr(p_buf)) == TRUE)
                         break;
+
                 }
                 else
                 {
-                    ALOGI("Controller OTP bdaddr %02X:%02X:%02X:%02X:%02X:%02X",
+                    ALOGI("address used %02X:%02X:%02X:%02X:%02X:%02X",
                         *(p_tmp+5), *(p_tmp+4), *(p_tmp+3),
                         *(p_tmp+2), *(p_tmp+1), *p_tmp);
                 }
