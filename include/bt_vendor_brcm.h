@@ -418,6 +418,29 @@
 #define HW_END_WITH_HCI_RESET    TRUE
 #endif
 
+#define BD_ADDR_LEN                             6
+
+
+/******************************************************************************
+**  Structures
+******************************************************************************/
+
+typedef struct{
+    uint8_t size;
+    uint8_t value[BD_ADDR_LEN];
+}address_pattern;
+
+static const address_pattern factory_chip_pattern[3] =
+{
+    /*{address_pattern <name> = {size of pattern, address as uint_8[BD_ADDR_LEN] }  }*/
+    /* The case of address NULL*/
+    {6,{0,0,0,0,0,0}  },
+    /* For BCM4324 chips */
+    {2,{0x43,0x24,0,0,0,0} },
+    /* For BCM4354 chips */
+    {2,{0x43,0x54,0,0,0,0} }
+};
+
 /******************************************************************************
 **  Extern variables and functions
 ******************************************************************************/
