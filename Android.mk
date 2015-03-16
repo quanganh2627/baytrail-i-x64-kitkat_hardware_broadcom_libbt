@@ -23,8 +23,9 @@ LOCAL_SHARED_LIBRARIES := \
 
 ifeq ($(strip $(BOARD_USE_CELLULAR_COEX)),true)
     LOCAL_REQUIRED_MODULES += libbtvendorcellcoex-client
-       LOCAL_SRC_FILES += src/hci_service.c
-       LOCAL_CFLAGS += -DUSE_CELLULAR_COEX
+    LOCAL_SRC_FILES += src/hci_service.c
+    LOCAL_CFLAGS += -DUSE_CELLULAR_COEX
+    LOCAL_C_INCLUDES += $(TARGET_OUT_HEADERS)/cellcoex
     LOCAL_SHARED_LIBRARIES += \
                libstlport \
                libbinder \
