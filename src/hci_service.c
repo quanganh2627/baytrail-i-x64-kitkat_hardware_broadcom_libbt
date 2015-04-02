@@ -38,9 +38,6 @@
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
-#define BTHCISERVICE_DBG TRUE
-#define BTHCISERVICE_VERB TRUE
-
 #ifndef BTHCISERVICE_DBG
 #define BTHCISERVICE_DBG FALSE
 #endif
